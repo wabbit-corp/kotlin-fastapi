@@ -32,9 +32,9 @@ publishing {
 }
 
 dependencies {
-    implementation("com.github.wabbit-corp:kotlin-minilog:1.0.0")
+    implementation("com.github.wabbit-corp:kotlin-minilog:1.0.1")
     implementation("com.github.wabbit-corp:kotlin-parsing-parsers:1.0.0")
-    implementation("com.github.wabbit-corp:kotlin-parsing-charset:1.0.0")
+    implementation("com.github.wabbit-corp:kotlin-parsing-charset:1.0.1")
     implementation("com.github.wabbit-corp:kotlin-exception-serialization:1.0.0")
 
     testImplementation(kotlin("test"))
