@@ -8,7 +8,7 @@ repositories {
 }
 
 group   = "one.wabbit"
-version = "1.0.0"
+version = "2.0.0"
 
 plugins {
     kotlin("jvm") version "2.0.20"
@@ -23,7 +23,7 @@ publishing {
         create<MavenPublication>("maven") {
             groupId = "one.wabbit"
             artifactId = "kotlin-fastapi"
-            version = "1.0.0"
+            version = "2.0.0"
             from(components["java"])
         }
     }
