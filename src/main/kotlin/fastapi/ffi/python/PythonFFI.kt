@@ -522,8 +522,9 @@ object Python {
         val agent = Agent("localhost", port)
 
         // Register a GC hook to kill the Python process when the reference is collected.
-        val cleaner: Cleaner = Cleaner.create()
-        cleaner.register(agent, Runnable { process.destroy() })
+        // FIXME: This doesn't work on JVM 8, but it is not a _huge issue_ since we expose a close method.
+        // val cleaner: Cleaner = Cleaner.create()
+        // cleaner.register(agent, Runnable { process.destroy() })
 
         val classLoader = kClasses.first().java.classLoader
         val proxyClasses = Array(kClasses.size + 1) {
