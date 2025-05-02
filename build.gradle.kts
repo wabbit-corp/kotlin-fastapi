@@ -11,9 +11,9 @@ group   = "one.wabbit"
 version = "2.0.0"
 
 plugins {
-    kotlin("jvm") version "2.0.20"
+    kotlin("jvm") version "2.1.20"
 
-    kotlin("plugin.serialization") version "2.0.20"
+    kotlin("plugin.serialization") version "2.1.20"
 
     id("maven-publish")
 }
@@ -45,22 +45,21 @@ dependencies {
     implementation("org.ow2.asm:asm-util:9.7.1")
     implementation("org.ow2.asm:asm-analysis:9.7.1")
     implementation("org.slf4j:slf4j-log4j12:2.0.16")
-    implementation("io.ktor:ktor-server-core:2.3.13")
-    implementation("io.ktor:ktor-server-netty:2.3.13")
-    implementation("io.ktor:ktor-server-content-negotiation:2.3.13")
-    implementation("io.ktor:ktor-server-status-pages:2.3.13")
-    implementation("io.ktor:ktor-server-call-logging:2.3.13")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.13")
-    implementation("io.ktor:ktor-server-auth:2.3.13")
-    implementation("io.ktor:ktor-server-auth-jwt:2.3.13")
-    implementation("io.ktor:ktor-server-cors:2.3.13")
-    implementation("io.ktor:ktor-server-websockets:2.3.13")
-    implementation("io.ktor:ktor-client-core:2.3.13")
-    implementation("io.ktor:ktor-client-cio:2.3.13")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.13")
-    implementation("io.ktor:ktor-client-serialization:2.3.13")
-    implementation("io.ktor:ktor-client-auth:2.3.13")
-    implementation("io.ktor:ktor-server-tests-jvm:2.3.13")
+    implementation("io.ktor:ktor-server-core:3.0.0")
+    implementation("io.ktor:ktor-server-netty:3.0.0")
+    implementation("io.ktor:ktor-server-content-negotiation:3.0.0")
+    implementation("io.ktor:ktor-server-status-pages:3.0.0")
+    implementation("io.ktor:ktor-server-call-logging:3.0.0")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.0")
+    implementation("io.ktor:ktor-server-auth:3.0.0")
+    implementation("io.ktor:ktor-server-auth-jwt:3.0.0")
+    implementation("io.ktor:ktor-server-cors:3.0.0")
+    implementation("io.ktor:ktor-server-websockets:3.0.0")
+    implementation("io.ktor:ktor-client-core:3.0.0")
+    implementation("io.ktor:ktor-client-cio:3.0.0")
+    implementation("io.ktor:ktor-client-content-negotiation:3.0.0")
+    implementation("io.ktor:ktor-client-serialization:3.0.0")
+    implementation("io.ktor:ktor-client-auth:3.0.0")
 }
 
 java {
