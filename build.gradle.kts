@@ -11,9 +11,11 @@ group   = "one.wabbit"
 version = "2.0.0"
 
 plugins {
-    kotlin("jvm") version "2.1.20"
+    kotlin("jvm") version "2.2.20"
+    id("org.jetbrains.dokka") version "2.0.0"
+    id("org.jetbrains.kotlinx.kover") version "0.9.1"
 
-    kotlin("plugin.serialization") version "2.1.20"
+    kotlin("plugin.serialization") version "2.2.20"
 
     id("maven-publish")
 }
@@ -31,35 +33,35 @@ publishing {
 
 dependencies {
     implementation("com.github.wabbit-corp:kotlin-minilog:1.0.2")
-    implementation("com.github.wabbit-corp:kotlin-parsing-parsers:2.0.0")
-    implementation("com.github.wabbit-corp:kotlin-parsing-charset:1.2.0")
+    implementation("com.github.wabbit-corp:kotlin-parsing-parsers:3.0.0")
+    implementation("com.github.wabbit-corp:kotlin-parsing-charset:1.3.0")
     implementation("com.github.wabbit-corp:kotlin-exception-serialization:1.1.0")
 
     testImplementation(kotlin("test"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
 
-    implementation("it.unimi.dsi:fastutil:8.5.15")
-    implementation("org.ow2.asm:asm:9.7.1")
-    implementation("org.ow2.asm:asm-tree:9.7.1")
-    implementation("org.ow2.asm:asm-util:9.7.1")
-    implementation("org.ow2.asm:asm-analysis:9.7.1")
-    implementation("org.slf4j:slf4j-log4j12:2.0.16")
-    implementation("io.ktor:ktor-server-core:3.0.0")
-    implementation("io.ktor:ktor-server-netty:3.0.0")
-    implementation("io.ktor:ktor-server-content-negotiation:3.0.0")
-    implementation("io.ktor:ktor-server-status-pages:3.0.0")
-    implementation("io.ktor:ktor-server-call-logging:3.0.0")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.0")
-    implementation("io.ktor:ktor-server-auth:3.0.0")
-    implementation("io.ktor:ktor-server-auth-jwt:3.0.0")
-    implementation("io.ktor:ktor-server-cors:3.0.0")
-    implementation("io.ktor:ktor-server-websockets:3.0.0")
-    implementation("io.ktor:ktor-client-core:3.0.0")
-    implementation("io.ktor:ktor-client-cio:3.0.0")
-    implementation("io.ktor:ktor-client-content-negotiation:3.0.0")
-    implementation("io.ktor:ktor-client-serialization:3.0.0")
-    implementation("io.ktor:ktor-client-auth:3.0.0")
+    implementation("it.unimi.dsi:fastutil:8.5.16")
+    implementation("org.ow2.asm:asm:9.8")
+    implementation("org.ow2.asm:asm-tree:9.8")
+    implementation("org.ow2.asm:asm-util:9.8")
+    implementation("org.ow2.asm:asm-analysis:9.8")
+    implementation("org.slf4j:slf4j-log4j12:2.0.17")
+    implementation("io.ktor:ktor-server-core:3.3.0")
+    implementation("io.ktor:ktor-server-netty:3.3.0")
+    implementation("io.ktor:ktor-server-content-negotiation:3.3.0")
+    implementation("io.ktor:ktor-server-status-pages:3.3.0")
+    implementation("io.ktor:ktor-server-call-logging:3.3.0")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.3.0")
+    implementation("io.ktor:ktor-server-auth:3.3.0")
+    implementation("io.ktor:ktor-server-auth-jwt:3.3.0")
+    implementation("io.ktor:ktor-server-cors:3.3.0")
+    implementation("io.ktor:ktor-server-websockets:3.3.0")
+    implementation("io.ktor:ktor-client-core:3.3.0")
+    implementation("io.ktor:ktor-client-cio:3.3.0")
+    implementation("io.ktor:ktor-client-content-negotiation:3.3.0")
+    implementation("io.ktor:ktor-client-serialization:3.3.0")
+    implementation("io.ktor:ktor-client-auth:3.3.0")
 }
 
 java {
@@ -89,5 +91,45 @@ tasks {
     jar {
         setProperty("zip64", true)
 
+    }
+}
+
+// Kover Configuration
+kover {
+    // useJacoco() // This is the default, can be specified if you want to be explicit
+    // reports {
+    //     // Configure reports for the default test task.
+    //     // Kover tries to infer the variant for simple JVM projects.
+    //     // If you have specific build types/flavors, you'd configure them here as variants.
+    //     variant() { // Or remove "debug" for a default JVM setup unless you have variants
+    //         html {
+    //             // reportDir.set(layout.buildDirectory.dir("reports/kover/html")) // Uncomment to customize output
+    //             // title.set("kotlin-fastapi Code Coverage") // Uncomment to customize title
+    //         }
+    //         xml {
+    //             // reportFile.set(layout.buildDirectory.file("reports/kover/coverage.xml")) // Uncomment to customize output
+    //         }
+    //     }
+    // }
+}
+
+dokka {
+    moduleName.set("kotlin-fastapi")
+    dokkaPublications.html {
+        suppressInheritedMembers.set(true)
+        failOnWarning.set(true)
+    }
+    dokkaSourceSets.main {
+        // includes.from("README.md")
+        sourceLink {
+            localDirectory.set(file("src/main/kotlin"))
+            remoteUrl("https://example.com/src")
+            remoteLineSuffix.set("#L")
+        }
+    }
+    pluginsConfiguration.html {
+        // customStyleSheets.from("styles.css")
+        // customAssets.from("logo.png")
+        footerMessage.set("(c) Wabbit Consulting Corporation")
     }
 }
