@@ -1,18 +1,12 @@
 package fastapi.http
 
-import io.ktor.http.*
-import kotlinx.serialization.InternalSerializationApi
+import io.ktor.http.HttpMethod
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.serializer
-import kotlin.reflect.KClass
-import kotlin.reflect.full.createType
-import kotlin.reflect.full.declaredFunctions
-import kotlin.reflect.full.valueParameters
-import kotlin.reflect.jvm.javaMethod
 
 internal sealed class PathChunk {
     data class Static(val value: String) : PathChunk()
+
     data class Arg(val name: Int) : PathChunk()
 
     companion object {
@@ -43,9 +37,11 @@ internal sealed class PathChunk {
 }
 
 internal data class BodyParameter<T>(val index: Int, val serializer: KSerializer<T>)
+
 internal data class ResultDeserializer<T>(val isNullable: Boolean, val serializer: KSerializer<T>)
 
 internal data class CombinedInterface(val list: List<Interface>)
+
 internal data class Interface(val list: List<MethodInfo>)
 
 internal data class MethodInfo(
@@ -64,15 +60,24 @@ internal data class MethodInfo(
     val streamOutSerializer: KSerializer<*>?,
     // Header binding
     val headerParams: Map<Int, String>,
-    val bearerParamIndex: Int?
+    val bearerParamIndex: Int?,
 )
 
 @Serializable
-internal data class WireStack(val file: String? = null, val function: String? = null, val line: Int? = null)
+internal data class WireStack(
+    val file: String? = null,
+    val function: String? = null,
+    val line: Int? = null,
+)
+
 @Serializable
-internal data class WireError(val type: String, val message: String? = null, val stack: List<WireStack>? = null)
-@Serializable
-internal data class ErrorEnvelope(val error: WireError)
+internal data class WireError(
+    val type: String,
+    val message: String? = null,
+    val stack: List<WireStack>? = null,
+)
+
+@Serializable internal data class ErrorEnvelope(val error: WireError)
 
 // Internal control frame used on WebSocket streams to indicate end-of-input
 // (chosen to be absurdly unlikely to collide with user payloads).

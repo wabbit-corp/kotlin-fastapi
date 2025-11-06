@@ -2,36 +2,33 @@
 
 package fastapi.cli
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.encodeToStream
-import kotlinx.serialization.json.decodeFromStream
-import kotlinx.serialization.serializerOrNull
 import java.io.ByteArrayOutputStream
-import java.nio.charset.StandardCharsets
+import java.io.File
+import java.io.InputStream
 import java.lang.reflect.Proxy
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.reflect.KClass
 import kotlin.reflect.full.declaredFunctions
 import kotlin.reflect.jvm.javaMethod
-import kotlinx.coroutines.Job
+import kotlin.reflect.jvm.jvmErasure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.InternalCoroutinesApi
-import java.io.File
-import java.io.InputStream
-import java.nio.charset.Charset
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.reflect.jvm.jvmErasure
+import kotlinx.coroutines.Job
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.encodeToStream
+import kotlinx.serialization.serializerOrNull
 
-class CliExit(
-    val code: Int,
-    val stderr: String,
-    val stdout: String = ""
-) : RuntimeException("Process exited $code: $stderr")
+class CliExit(val code: Int, val stderr: String, val stdout: String = "") :
+    RuntimeException("Process exited $code: $stderr")
 
 data class ClientOptions(
     val json: Json = Json,
@@ -41,23 +38,28 @@ data class ClientOptions(
     val timeoutMs: Long? = null,
     val maxOutputBytes: Int = 4 * 1024 * 1024,
     val redirectErrorStream: Boolean = false,
-    val charset: Charset = StandardCharsets.UTF_8
+    val charset: Charset = StandardCharsets.UTF_8,
 )
 
 @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
 inline fun <reified T : Any> cliClient(executable: String): T = cliClient(T::class, executable)
 
 @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
-fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOptions = ClientOptions()): T {
+fun <T : Any> cliClient(
+    kClass: KClass<T>,
+    executable: String,
+    options: ClientOptions = ClientOptions(),
+): T {
     val clazz = kClass.java
-    val methods = describeInterface(kClass).associateBy { spec ->
-        kClass.declaredFunctions.first { it.name == spec.functionName }.javaMethod!!
-    }
+    val methods =
+        describeInterface(kClass).associateBy { spec ->
+            kClass.declaredFunctions.first { it.name == spec.functionName }.javaMethod!!
+        }
 
     data class InvocationRecipe(
         val argv: List<String>,
         val stdinSpec: ParamSpec?,
-        val stdinValue: Any?
+        val stdinValue: Any?,
     )
 
     fun buildInvocation(spec: MethodSpec, realArgs: List<Any?>): InvocationRecipe {
@@ -73,25 +75,32 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
         for ((i, anyVal) in realArgs.withIndex()) {
             val p = byIndex[i] ?: continue
             when (p.kind) {
-                ParamKind.STDIN_JSON, ParamKind.STDIN_TEXT, ParamKind.STDIN_BYTES -> { stdinSpec = p; stdinValue = anyVal }
+                ParamKind.STDIN_JSON,
+                ParamKind.STDIN_TEXT,
+                ParamKind.STDIN_BYTES -> {
+                    stdinSpec = p
+                    stdinValue = anyVal
+                }
                 ParamKind.FLAG -> {
                     val b = anyVal as Boolean
-                    if (b) argv += "--${p.long}" else if (p.negatable) argv += "--no-${p.long}"
+                    if (b) {
+                        argv += "--${p.long}"
+                    } else if (p.negatable) {
+                        argv += "--no-${p.long}"
+                    }
                 }
                 ParamKind.OPTION -> {
                     if (anyVal == null) continue
                     if (p.repeatKind != RepeatKind.NONE) {
-                        @Suppress("UNCHECKED_CAST")
-                        val list = anyVal as Iterable<Any>
-                        for (v in list) argv += "--${p.long}=${v}"
+                        @Suppress("UNCHECKED_CAST") val list = anyVal as Iterable<Any>
+                        for (v in list) argv += "--${p.long}=$v"
                     } else {
-                        argv += "--${p.long}=${anyVal}"
+                        argv += "--${p.long}=$anyVal"
                     }
                 }
                 ParamKind.POSITIONAL -> {
                     if (p.repeatKind != RepeatKind.NONE) {
-                        @Suppress("UNCHECKED_CAST")
-                        val list = anyVal as Iterable<Any>
+                        @Suppress("UNCHECKED_CAST") val list = anyVal as Iterable<Any>
                         list.forEach { argv += it.toString() }
                     } else {
                         argv += anyVal.toString()
@@ -107,7 +116,7 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
         val stdoutBuf: ByteArrayOutputStream,
         val stderrBuf: ByteArrayOutputStream,
         val stdoutThread: Thread,
-        val stderrThread: Thread
+        val stderrThread: Thread,
     )
 
     fun readStreamLimited(ins: InputStream, maxBytes: Int): ByteArrayOutputStream {
@@ -132,19 +141,21 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
     fun startCollectors(proc: Process): IOCollectors {
         val outBuf = ByteArrayOutputStream()
         val errBuf = ByteArrayOutputStream()
-        val tOut = thread(start = true, isDaemon = true, name = "cliClient-stdout") {
-            proc.inputStream.use { ins ->
-                val b = readStreamLimited(ins, options.maxOutputBytes)
-                outBuf.write(b.toByteArray())
+        val tOut =
+            thread(start = true, isDaemon = true, name = "cliClient-stdout") {
+                proc.inputStream.use { ins ->
+                    val b = readStreamLimited(ins, options.maxOutputBytes)
+                    outBuf.write(b.toByteArray())
+                }
             }
-        }
-        val tErr = thread(start = true, isDaemon = true, name = "cliClient-stderr") {
-            val src = if (options.redirectErrorStream) proc.inputStream else proc.errorStream
-            src.use { ins ->
-                val b = readStreamLimited(ins, options.maxOutputBytes)
-                errBuf.write(b.toByteArray())
+        val tErr =
+            thread(start = true, isDaemon = true, name = "cliClient-stderr") {
+                val src = if (options.redirectErrorStream) proc.inputStream else proc.errorStream
+                src.use { ins ->
+                    val b = readStreamLimited(ins, options.maxOutputBytes)
+                    errBuf.write(b.toByteArray())
+                }
             }
-        }
         return IOCollectors(outBuf, errBuf, tOut, tErr)
     }
 
@@ -153,31 +164,41 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
             proc.outputStream.use { os ->
                 when (stdinSpec.kind) {
                     ParamKind.STDIN_JSON -> {
-                        val ser = serializerOrNull(stdinSpec.kType)
-                            ?: throw IllegalArgumentException("No serializer for stdin param: ${stdinSpec.kParam.name}")
+                        val ser =
+                            serializerOrNull(stdinSpec.kType)
+                                ?: throw IllegalArgumentException(
+                                    "No serializer for stdin param: ${stdinSpec.kParam.name}"
+                                )
                         options.json.encodeToStream(ser, stdinValue, os)
                     }
                     ParamKind.STDIN_TEXT -> {
-                        val text = when (stdinValue) {
-                            null -> ""
-                            is String -> stdinValue
-                            else -> stdinValue.toString()
-                        }
+                        val text =
+                            when (stdinValue) {
+                                null -> ""
+                                is String -> stdinValue
+                                else -> stdinValue.toString()
+                            }
                         os.write(text.toByteArray(options.charset))
                     }
                     ParamKind.STDIN_BYTES -> {
-                        val bytes = when (stdinValue) {
-                            is ByteArray -> stdinValue
-                            null -> ByteArray(0)
-                            else -> throw IllegalArgumentException("Expected ByteArray for @StdinBytes")
-                        }
+                        val bytes =
+                            when (stdinValue) {
+                                is ByteArray -> stdinValue
+                                null -> ByteArray(0)
+                                else ->
+                                    throw IllegalArgumentException(
+                                        "Expected ByteArray for @StdinBytes"
+                                    )
+                            }
                         os.write(bytes)
                     }
                     else -> {}
                 }
             }
         } else {
-            try { proc.outputStream.close() } catch (_: Throwable) {}
+            try {
+                proc.outputStream.close()
+            } catch (_: Throwable) {}
         }
     }
 
@@ -185,7 +206,9 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
         when {
             spec.returnKType.jvmErasure == String::class -> stdout.removeSuffix("\n")
             spec.returnSerializer != null -> {
-                stdout.byteInputStream().use { options.json.decodeFromStream(spec.returnSerializer, it) }
+                stdout.byteInputStream().use {
+                    options.json.decodeFromStream(spec.returnSerializer, it)
+                }
             }
             else -> Unit
         }
@@ -207,8 +230,14 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
                 val os = System.getProperty("os.name").lowercase()
                 if (os.contains("win")) {
                     env.putIfAbsent("SystemRoot", System.getenv("SystemRoot") ?: "C:\\Windows")
-                    env.putIfAbsent("ComSpec", System.getenv("ComSpec") ?: "C:\\Windows\\System32\\cmd.exe")
-                    env.putIfAbsent("PATH", System.getenv("PATH") ?: "C:\\Windows\\System32;C:\\Windows")
+                    env.putIfAbsent(
+                        "ComSpec",
+                        System.getenv("ComSpec") ?: "C:\\Windows\\System32\\cmd.exe",
+                    )
+                    env.putIfAbsent(
+                        "PATH",
+                        System.getenv("PATH") ?: "C:\\Windows\\System32;C:\\Windows",
+                    )
                 } else {
                     env.putIfAbsent("PATH", "/usr/bin:/bin")
                 }
@@ -227,11 +256,13 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
 
             writeStdinIfNeeded(proc, recipe.stdinSpec, recipe.stdinValue)
 
-            val finished = if (options.timeoutMs != null) {
-                proc.waitFor(options.timeoutMs, TimeUnit.MILLISECONDS)
-            } else {
-                proc.waitFor(); true
-            }
+            val finished =
+                if (options.timeoutMs != null) {
+                    proc.waitFor(options.timeoutMs, TimeUnit.MILLISECONDS)
+                } else {
+                    proc.waitFor()
+                    true
+                }
 
             io.stdoutThread.join()
             io.stderrThread.join()
@@ -277,24 +308,38 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
             contJob?.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
                 if (completed.compareAndSet(false, true)) {
                     killProcessTree(proc)
-                    try { proc.inputStream.close() } catch (_: Throwable) {}
-                    try { proc.errorStream.close() } catch (_: Throwable) {}
-                    try { proc.outputStream.close() } catch (_: Throwable) {}
+                    try {
+                        proc.inputStream.close()
+                    } catch (_: Throwable) {}
+                    try {
+                        proc.errorStream.close()
+                    } catch (_: Throwable) {}
+                    try {
+                        proc.outputStream.close()
+                    } catch (_: Throwable) {}
                     cont.resumeWith(Result.failure(cause ?: CancellationException("cancelled")))
                 }
             }
 
             // Optional timeout
             val timeoutThread =
-                if (options.timeoutMs != null) thread(start = true, isDaemon = true, name = "cliClient-timeout") {
-                    try {
-                        Thread.sleep(options.timeoutMs)
-                        if (completed.compareAndSet(false, true)) {
-                            killProcessTree(proc)
-                            cont.resumeWith(Result.failure(CliExit(124, "timed out after ${options.timeoutMs}ms")))
-                        }
-                    } catch (_: InterruptedException) {}
-                } else null
+                if (options.timeoutMs != null) {
+                    thread(start = true, isDaemon = true, name = "cliClient-timeout") {
+                        try {
+                            Thread.sleep(options.timeoutMs)
+                            if (completed.compareAndSet(false, true)) {
+                                killProcessTree(proc)
+                                cont.resumeWith(
+                                    Result.failure(
+                                        CliExit(124, "timed out after ${options.timeoutMs}ms")
+                                    )
+                                )
+                            }
+                        } catch (_: InterruptedException) {}
+                    }
+                } else {
+                    null
+                }
 
             proc.onExit().whenComplete { _, ex ->
                 timeoutThread?.interrupt()
@@ -303,13 +348,24 @@ fun <T : Any> cliClient(kClass: KClass<T>, executable: String, options: ClientOp
                     io.stdoutThread.join()
                     io.stderrThread.join()
                     if (ex != null) {
-                        cont.resumeWith(Result.failure(ex)); return@whenComplete
+                        cont.resumeWith(Result.failure(ex))
+                        return@whenComplete
                     }
-                    val code = try { proc.exitValue() } catch (_: IllegalThreadStateException) { -1 }
+                    val code =
+                        try {
+                            proc.exitValue()
+                        } catch (_: IllegalThreadStateException) {
+                            -1
+                        }
                     val stdout = io.stdoutBuf.toString(options.charset)
                     val stderr = io.stderrBuf.toString(options.charset)
-                    if (code != 0) cont.resumeWith(Result.failure(CliExit(code, stderr.trim(), stdout.trimEnd())))
-                    else cont.resumeWith(Result.success(decodeReturn(spec, stdout)))
+                    if (code != 0) {
+                        cont.resumeWith(
+                            Result.failure(CliExit(code, stderr.trim(), stdout.trimEnd()))
+                        )
+                    } else {
+                        cont.resumeWith(Result.success(decodeReturn(spec, stdout)))
+                    }
                 } catch (t: Throwable) {
                     cont.resumeWith(Result.failure(t))
                 }
@@ -325,10 +381,14 @@ fun killProcessTree(proc: Process) {
     try {
         val h = proc.toHandle()
         h.descendants().forEach { ph ->
-            try { ph.destroyForcibly() } catch (_: Throwable) {}
+            try {
+                ph.destroyForcibly()
+            } catch (_: Throwable) {}
         }
         h.destroyForcibly()
     } catch (_: Throwable) {
-        try { proc.destroyForcibly() } catch (_: Throwable) {}
+        try {
+            proc.destroyForcibly()
+        } catch (_: Throwable) {}
     }
 }
