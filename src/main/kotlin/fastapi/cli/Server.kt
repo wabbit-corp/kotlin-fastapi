@@ -500,8 +500,7 @@ private fun parseArgsForMethod(m: MethodSpec, argv: List<String>): ParseOutcome 
     }
 
     // Assign positionals
-    val requiredPosCount =
-        positional.count { !it.kParam.isOptional && !it.kParam.type.isMarkedNullable }
+    val requiredPosCount = positional.count { it.required }
     if (posValues.size < requiredPosCount) {
         val needList =
             positional.map { p ->
@@ -518,8 +517,27 @@ private fun parseArgsForMethod(m: MethodSpec, argv: List<String>): ParseOutcome 
             }
         errors += ParseError.MissingPositionals(needList)
     }
-    positional.forEachIndexed { i, spec ->
-        if (i < posValues.size) assignPositionalAcc(out, spec, posValues[i], errors)
+    val repeatableIndex = positional.indexOfLast { it.repeatKind != RepeatKind.NONE }
+    if (repeatableIndex >= 0) {
+        if (repeatableIndex != positional.lastIndex) {
+            errors +=
+                ParseError.InvalidValue("<args>", "", "repeatable positionals must be last")
+        }
+
+        for (i in 0 until repeatableIndex) {
+            if (i < posValues.size) assignPositionalAcc(out, positional[i], posValues[i], errors)
+        }
+
+        val repeatSpec = positional[repeatableIndex]
+        if (posValues.size > repeatableIndex) {
+            for (i in repeatableIndex until posValues.size) {
+                assignPositionalAcc(out, repeatSpec, posValues[i], errors)
+            }
+        }
+    } else {
+        positional.forEachIndexed { i, spec ->
+            if (i < posValues.size) assignPositionalAcc(out, spec, posValues[i], errors)
+        }
     }
 
     // Detect missing required options

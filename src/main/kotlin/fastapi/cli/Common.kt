@@ -121,11 +121,7 @@ internal fun describeInterface(kClass: KClass<*>): List<MethodSpec> {
                     !p.isOptional &&
                     !p.type.isMarkedNullable &&
                     repeatKind == RepeatKind.NONE
-            val isRequiredPos =
-                (pos != null) &&
-                    !p.isOptional &&
-                    !p.type.isMarkedNullable &&
-                    repeatKind == RepeatKind.NONE
+            val isRequiredPos = (pos != null) && !p.isOptional && !p.type.isMarkedNullable
 
             when {
                 stdinJson != null || stdinText != null || stdinBytes != null -> {

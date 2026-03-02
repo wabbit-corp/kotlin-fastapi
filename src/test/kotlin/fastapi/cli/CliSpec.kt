@@ -342,6 +342,32 @@ class CliSpec {
         assertEquals("--not-an-option->dst\n", out)
     }
 
+    interface VariadicCli {
+        @Cli.Command("gather") fun gather(@Cli.Positional(0) items: List<String>): String
+    }
+
+    class VariadicImpl : VariadicCli {
+        override fun gather(items: List<String>): String = items.joinToString("|")
+    }
+
+    @Test
+    fun positional_list_collects_all_args() {
+        val (out, _) =
+            runMainOk(
+                listOf(VariadicImpl() to VariadicCli::class),
+                arrayOf("gather", "a", "b", "c"),
+            )
+        assertEquals("a|b|c\n", out)
+    }
+
+    @Test
+    fun positional_list_missing_reports_error() {
+        val (code, _out, err) =
+            runMainExpectExit(listOf(VariadicImpl() to VariadicCli::class), arrayOf("gather"))
+        assertEquals(1, code)
+        assertTrue(err.contains("Missing positional arguments"), "unexpected stderr:\n$err")
+    }
+
     @Test
     fun enum_kebab_case() {
         val (out, _) =
