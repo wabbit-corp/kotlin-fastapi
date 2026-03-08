@@ -3,19 +3,17 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 repositories {
     mavenCentral()
-
-    maven("https://jitpack.io")
 }
 
 group   = "one.wabbit"
 version = "2.0.0"
 
 plugins {
-    kotlin("jvm") version "2.2.20"
-    id("org.jetbrains.dokka") version "2.0.0"
-    id("org.jetbrains.kotlinx.kover") version "0.9.1"
+    kotlin("jvm")
+    id("org.jetbrains.dokka")
+    id("org.jetbrains.kotlinx.kover")
 
-    kotlin("plugin.serialization") version "2.2.20"
+    kotlin("plugin.serialization")
 
     id("maven-publish")
 }
@@ -32,11 +30,11 @@ publishing {
 }
 
 dependencies {
-    implementation("one.wabbit:kotlin-minilog:1.0.2")
-    implementation("one.wabbit:kotlin-parsing-parsers:3.0.0")
-    implementation("one.wabbit:kotlin-parsing-charset:1.3.0")
-    implementation("one.wabbit:kotlin-exception-serialization:1.1.0")
-    implementation("one.wabbit:kotlin-exec:0.0.1")
+    implementation(project(":kotlin-minilog")) // 1.0.2
+    implementation(project(":kotlin-parsing-parsers")) // 3.0.0
+    implementation(project(":kotlin-parsing-charset")) // 1.3.0
+    implementation(project(":kotlin-exception-serialization")) // 1.1.0
+    implementation(project(":kotlin-exec")) // 0.0.1
 
     testImplementation(kotlin("test"))
 
@@ -85,7 +83,9 @@ tasks {
     withType<KotlinCompile> {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_21)
-            freeCompilerArgs.add("-Xcontext-receivers")
+
+            freeCompilerArgs.add("-Xcontext-parameters")
+
         }
     }
 
