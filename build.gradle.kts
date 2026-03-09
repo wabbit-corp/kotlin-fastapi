@@ -3,6 +3,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 repositories {
     mavenCentral()
+
+    maven("https://jitpack.io")
 }
 
 group   = "one.wabbit"
@@ -30,11 +32,11 @@ publishing {
 }
 
 dependencies {
-    implementation(project(":kotlin-minilog")) // 1.0.2
-    implementation(project(":kotlin-parsing-parsers")) // 3.0.0
-    implementation(project(":kotlin-parsing-charset")) // 1.3.0
-    implementation(project(":kotlin-exception-serialization")) // 1.1.0
-    implementation(project(":kotlin-exec")) // 0.0.1
+    implementation("one.wabbit:kotlin-minilog:1.0.2")
+    implementation("one.wabbit:kotlin-parsing-parsers:3.0.0")
+    implementation("one.wabbit:kotlin-parsing-charset:1.3.0")
+    implementation("one.wabbit:kotlin-exception-serialization:1.1.0")
+    implementation("one.wabbit:kotlin-exec:0.0.1")
 
     testImplementation(kotlin("test"))
 

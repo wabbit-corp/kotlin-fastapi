@@ -4,7 +4,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://repo.papermc.io/repository/maven-public/")
+
     }
 }
 
@@ -12,7 +12,7 @@ pluginManagement {
     repositories {
         google()
         gradlePluginPortal()
-        maven("https://repo.papermc.io/repository/maven-public/")
+
     }
     plugins {
         id("org.jetbrains.kotlin.jvm") version "2.3.10"
@@ -32,30 +32,3 @@ pluginManagement {
         id("net.minecrell.plugin-yml.bukkit") version "0.6.0"
     }
 }
-
-include(":kotlin-minilog")
-project(":kotlin-minilog").projectDir = file("../kotlin-minilog")
-include(":kotlin-parsing-parsers")
-project(":kotlin-parsing-parsers").projectDir = file("../kotlin-parsing-parsers")
-include(":kotlin-parsing-charset")
-project(":kotlin-parsing-charset").projectDir = file("../kotlin-parsing-charset")
-include(":kotlin-exception-serialization")
-project(":kotlin-exception-serialization").projectDir = file("../kotlin-exception-serialization")
-include(":kotlin-exec")
-project(":kotlin-exec").projectDir = file("../kotlin-exec")
-include(":kotlin-java-escape")
-project(":kotlin-java-escape").projectDir = file("../kotlin-java-escape")
-include(":kotlin-data")
-project(":kotlin-data").projectDir = file("../kotlin-data")
-include(":kotlin-data-need")
-project(":kotlin-data-need").projectDir = file("../kotlin-data-need")
-include(":kotlin-data-ref")
-project(":kotlin-data-ref").projectDir = file("../kotlin-data-ref")
-include(":kotlin-parsing-charinput")
-project(":kotlin-parsing-charinput").projectDir = file("../kotlin-parsing-charinput")
-include(":kotlin-random-gen")
-project(":kotlin-random-gen").projectDir = file("../kotlin-random-gen")
-include(":kotlin-throwable-policy")
-project(":kotlin-throwable-policy").projectDir = file("../kotlin-throwable-policy")
-include(":kotlin-base58")
-project(":kotlin-base58").projectDir = file("../kotlin-base58")
