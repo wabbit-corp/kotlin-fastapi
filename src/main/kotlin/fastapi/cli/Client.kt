@@ -1,31 +1,36 @@
-@file:OptIn(InternalCoroutinesApi::class)
-
 package fastapi.cli
 
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
 import java.lang.reflect.Proxy
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.concurrent.thread
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.reflect.KClass
 import kotlin.reflect.full.declaredFunctions
 import kotlin.reflect.jvm.javaMethod
 import kotlin.reflect.jvm.jvmErasure
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.InternalCoroutinesApi
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+import kotlinx.io.files.Path as KxPath
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 import kotlinx.serialization.serializerOrNull
+import one.wabbit.exec.EnvPolicy
+import one.wabbit.exec.Exec
+import one.wabbit.exec.ExecError
+import one.wabbit.exec.ExecException
+import one.wabbit.exec.ExecResult
+import one.wabbit.exec.ExecSpec
+import one.wabbit.exec.ExitPolicy
+import one.wabbit.exec.TextEncoding
 
 class CliExit(val code: Int, val stderr: String, val stdout: String = "") :
     RuntimeException("Process exited $code: $stderr")
@@ -112,283 +117,143 @@ fun <T : Any> cliClient(
         return InvocationRecipe(argv, stdinSpec, stdinValue)
     }
 
-    data class IOCollectors(
-        val stdoutBuf: ByteArrayOutputStream,
-        val stderrBuf: ByteArrayOutputStream,
-        val stdoutThread: Thread,
-        val stderrThread: Thread,
-    )
+    fun textEncoding(): TextEncoding = TextEncoding.Named(options.charset.name())
 
-    fun readStreamLimited(ins: InputStream, maxBytes: Int): ByteArrayOutputStream {
-        val buf = ByteArrayOutputStream()
-        val tmp = ByteArray(8192)
-        var total = 0
-        while (true) {
-            val n = ins.read(tmp)
-            if (n == -1) break
-            total += n
-            if (total > maxBytes) {
-                // Truncate and stop; the process may still run but we'll ignore extra
-                buf.write(tmp, 0, (n - (total - maxBytes)).coerceAtLeast(0))
-                break
-            } else {
-                buf.write(tmp, 0, n)
-            }
-        }
-        return buf
-    }
-
-    fun startCollectors(proc: Process): IOCollectors {
-        val outBuf = ByteArrayOutputStream()
-        val errBuf = ByteArrayOutputStream()
-        val tOut =
-            thread(start = true, isDaemon = true, name = "cliClient-stdout") {
-                proc.inputStream.use { ins ->
-                    val b = readStreamLimited(ins, options.maxOutputBytes)
-                    outBuf.write(b.toByteArray())
-                }
-            }
-        val tErr =
-            thread(start = true, isDaemon = true, name = "cliClient-stderr") {
-                val src = if (options.redirectErrorStream) proc.inputStream else proc.errorStream
-                src.use { ins ->
-                    val b = readStreamLimited(ins, options.maxOutputBytes)
-                    errBuf.write(b.toByteArray())
-                }
-            }
-        return IOCollectors(outBuf, errBuf, tOut, tErr)
-    }
-
-    fun writeStdinIfNeeded(proc: Process, stdinSpec: ParamSpec?, stdinValue: Any?) {
-        if (stdinSpec != null) {
-            proc.outputStream.use { os ->
-                when (stdinSpec.kind) {
-                    ParamKind.STDIN_JSON -> {
-                        val ser =
-                            serializerOrNull(stdinSpec.kType)
-                                ?: throw IllegalArgumentException(
-                                    "No serializer for stdin param: ${stdinSpec.kParam.name}"
-                                )
-                        options.json.encodeToStream(ser, stdinValue, os)
-                    }
-                    ParamKind.STDIN_TEXT -> {
-                        val text =
-                            when (stdinValue) {
-                                null -> ""
-                                is String -> stdinValue
-                                else -> stdinValue.toString()
-                            }
-                        os.write(text.toByteArray(options.charset))
-                    }
-                    ParamKind.STDIN_BYTES -> {
-                        val bytes =
-                            when (stdinValue) {
-                                is ByteArray -> stdinValue
-                                null -> ByteArray(0)
-                                else ->
-                                    throw IllegalArgumentException(
-                                        "Expected ByteArray for @StdinBytes"
-                                    )
-                            }
-                        os.write(bytes)
-                    }
-                    else -> {}
-                }
-            }
+    fun envPolicy(): EnvPolicy =
+        if (options.inheritParentEnv) {
+            EnvPolicy.Inherit(overlay = options.env)
         } else {
-            try {
-                proc.outputStream.close()
-            } catch (_: Throwable) {}
+            EnvPolicy.Hermetic(base = options.env)
         }
-    }
+
+    fun stdinInput(stdinSpec: ParamSpec?, stdinValue: Any?): ExecSpec.Input =
+        when (stdinSpec?.kind) {
+            null -> ExecSpec.Input.None
+            ParamKind.STDIN_JSON -> {
+                val ser =
+                    serializerOrNull(stdinSpec.kType)
+                        ?: throw IllegalArgumentException(
+                            "No serializer for stdin param: ${stdinSpec.kParam.name}"
+                        )
+                val bytes = ByteArrayOutputStream()
+                options.json.encodeToStream(ser, stdinValue, bytes)
+                ExecSpec.Input.Bytes(bytes.toByteArray())
+            }
+            ParamKind.STDIN_TEXT -> {
+                val text =
+                    when (stdinValue) {
+                        null -> ""
+                        is String -> stdinValue
+                        else -> stdinValue.toString()
+                    }
+                ExecSpec.Input.Text(text, encoding = textEncoding())
+            }
+            ParamKind.STDIN_BYTES -> {
+                val bytes =
+                    when (stdinValue) {
+                        is ByteArray -> stdinValue
+                        null -> ByteArray(0)
+                        else -> throw IllegalArgumentException("Expected ByteArray for @StdinBytes")
+                    }
+                ExecSpec.Input.Bytes(bytes)
+            }
+            else -> ExecSpec.Input.None
+        }
+
+    fun captureSink(): ExecSpec.SinkSpec.Capture =
+        ExecSpec.SinkSpec.Capture(maxBytes = options.maxOutputBytes, keep = ExecSpec.Keep.Head)
+
+    fun buildExecSpec(recipe: InvocationRecipe): ExecSpec =
+        ExecSpec(
+            argv = listOf(executable) + recipe.argv,
+            cwd = options.cwd?.let { KxPath(it.absolutePath) },
+            env = envPolicy(),
+            stdin = stdinInput(recipe.stdinSpec, recipe.stdinValue),
+            stdout = ExecSpec.StdoutSpec.Pipe(captureSink()),
+            stderr =
+                if (options.redirectErrorStream) {
+                    ExecSpec.StderrSpec.ToStdout
+                } else {
+                    ExecSpec.StderrSpec.Pipe(captureSink())
+                },
+            timeout = options.timeoutMs?.milliseconds,
+            exitPolicy = ExitPolicy.ThrowOnNonZero,
+        )
+
+    fun decodeCaptured(captured: ExecResult.Captured?): String =
+        captured?.text(textEncoding(), trimLineEndings = false).orEmpty()
 
     fun decodeReturn(spec: MethodSpec, stdout: String): Any? =
         when {
             spec.returnKType.jvmErasure == String::class -> stdout.removeSuffix("\n")
             spec.returnSerializer != null -> {
-                stdout.byteInputStream().use {
+                stdout.byteInputStream(options.charset).use {
                     options.json.decodeFromStream(spec.returnSerializer, it)
                 }
             }
             else -> Unit
         }
 
+    fun unexpectedCliExit(error: ExecError, stderr: String, stdout: String): CliExit =
+        CliExit(-1, stderr.ifEmpty { error.message }, stdout)
+
+    fun toCliExit(error: ExecError): CliExit {
+        val stdout = decodeCaptured(error.captures?.stdout).trimEnd()
+        val stderr =
+            if (options.redirectErrorStream) {
+                stdout.trim().ifEmpty { decodeCaptured(error.captures?.stderr).trim() }
+            } else {
+                decodeCaptured(error.captures?.stderr).trim()
+            }
+        return when (error) {
+            is ExecError.TimedOut -> CliExit(124, "timed out after ${error.timeoutMs}ms", stdout)
+            is ExecError.ExitNonZero -> CliExit(error.exitCode, stderr, stdout)
+            else -> unexpectedCliExit(error, stderr, stdout)
+        }
+    }
+
+    fun throwableFromExec(error: ExecError): Throwable =
+        when (error) {
+            is ExecError.TimedOut,
+            is ExecError.ExitNonZero -> toCliExit(error)
+            is ExecError.Cancelled ->
+                (error.cause as? CancellationException) ?: CancellationException(error.message)
+            else -> error.cause ?: ExecException(error)
+        }
+
+    fun runBlockingOnce(spec: MethodSpec, realArgs: List<Any?>): Any? {
+        val recipe = buildInvocation(spec, realArgs)
+        val result =
+            try {
+                Exec.execBlocking(buildExecSpec(recipe))
+            } catch (e: ExecException) {
+                throw throwableFromExec(e.error)
+            }
+        return decodeReturn(spec, decodeCaptured(result.stdout))
+    }
+
     return Proxy.newProxyInstance(clazz.classLoader, arrayOf(clazz)) { _, method, args ->
         val spec = methods[method] ?: error("No spec for ${method.name}")
 
         val isSuspend = method.parameterTypes.lastOrNull()?.name == Continuation::class.java.name
         val realArgs = if (isSuspend) args.dropLast(1) else args.toList()
-        val cont = if (isSuspend) args.last() as Continuation<Any?> else null
-
-        fun configure(pb: ProcessBuilder) {
-            if (options.cwd != null) pb.directory(options.cwd)
-            pb.redirectErrorStream(options.redirectErrorStream)
-            if (!options.inheritParentEnv) {
-                val env = pb.environment()
-                env.clear()
-                // minimal defaults (very small; caller can add more)
-                val os = System.getProperty("os.name").lowercase()
-                if (os.contains("win")) {
-                    env.putIfAbsent("SystemRoot", System.getenv("SystemRoot") ?: "C:\\Windows")
-                    env.putIfAbsent(
-                        "ComSpec",
-                        System.getenv("ComSpec") ?: "C:\\Windows\\System32\\cmd.exe",
-                    )
-                    env.putIfAbsent(
-                        "PATH",
-                        System.getenv("PATH") ?: "C:\\Windows\\System32;C:\\Windows",
-                    )
-                } else {
-                    env.putIfAbsent("PATH", "/usr/bin:/bin")
-                }
-                env.putAll(options.env)
-            } else if (options.env.isNotEmpty()) {
-                pb.environment().putAll(options.env)
-            }
-        }
-
-        fun runBlockingOnce(): Any? {
-            val recipe = buildInvocation(spec, realArgs)
-            val pb = ProcessBuilder(listOf(executable) + recipe.argv)
-            configure(pb)
-            val proc = pb.start()
-            val io = startCollectors(proc)
-
-            writeStdinIfNeeded(proc, recipe.stdinSpec, recipe.stdinValue)
-
-            val finished =
-                if (options.timeoutMs != null) {
-                    proc.waitFor(options.timeoutMs, TimeUnit.MILLISECONDS)
-                } else {
-                    proc.waitFor()
-                    true
-                }
-
-            io.stdoutThread.join()
-            io.stderrThread.join()
-
-            val stdout = io.stdoutBuf.toString(options.charset)
-            val stderr = io.stderrBuf.toString(options.charset)
-
-            if (!finished) {
-                killProcessTree(proc)
-                throw CliExit(124, "timed out after ${options.timeoutMs}ms", stdout)
-            }
-
-            val code = proc.exitValue()
-            if (code != 0) throw CliExit(code, stderr.trim(), stdout.trimEnd())
-            return decodeReturn(spec, stdout)
-        }
 
         if (!isSuspend) {
-            runBlockingOnce()
+            runBlockingOnce(spec, realArgs)
         } else {
+            val cont = args.last() as Continuation<Any?>
             val recipe = buildInvocation(spec, realArgs)
-            val contJob: Job? = cont!!.context[Job]
-            if (contJob != null && !contJob.isActive) {
-                cont.resumeWith(Result.failure(CancellationException("cancelled before start")))
-                return@newProxyInstance COROUTINE_SUSPENDED
-            }
-
-            val pb = ProcessBuilder(listOf(executable) + recipe.argv)
-            configure(pb)
-            val proc = pb.start()
-            val io = startCollectors(proc)
-
-            try {
-                writeStdinIfNeeded(proc, recipe.stdinSpec, recipe.stdinValue)
-            } catch (t: Throwable) {
-                proc.destroyForcibly()
-                cont.resumeWith(Result.failure(t))
-                return@newProxyInstance COROUTINE_SUSPENDED
-            }
-
-            val completed = AtomicBoolean(false)
-
-            contJob?.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
-                if (completed.compareAndSet(false, true)) {
-                    killProcessTree(proc)
-                    try {
-                        proc.inputStream.close()
-                    } catch (_: Throwable) {}
-                    try {
-                        proc.errorStream.close()
-                    } catch (_: Throwable) {}
-                    try {
-                        proc.outputStream.close()
-                    } catch (_: Throwable) {}
-                    cont.resumeWith(Result.failure(cause ?: CancellationException("cancelled")))
-                }
-            }
-
-            // Optional timeout
-            val timeoutThread =
-                if (options.timeoutMs != null) {
-                    thread(start = true, isDaemon = true, name = "cliClient-timeout") {
-                        try {
-                            Thread.sleep(options.timeoutMs)
-                            if (completed.compareAndSet(false, true)) {
-                                killProcessTree(proc)
-                                cont.resumeWith(
-                                    Result.failure(
-                                        CliExit(124, "timed out after ${options.timeoutMs}ms")
-                                    )
-                                )
-                            }
-                        } catch (_: InterruptedException) {}
-                    }
-                } else {
-                    null
-                }
-
-            proc.onExit().whenComplete { _, ex ->
-                timeoutThread?.interrupt()
-                if (!completed.compareAndSet(false, true)) return@whenComplete
+            CoroutineScope(cont.context).launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
-                    io.stdoutThread.join()
-                    io.stderrThread.join()
-                    if (ex != null) {
-                        cont.resumeWith(Result.failure(ex))
-                        return@whenComplete
-                    }
-                    val code =
-                        try {
-                            proc.exitValue()
-                        } catch (_: IllegalThreadStateException) {
-                            -1
-                        }
-                    val stdout = io.stdoutBuf.toString(options.charset)
-                    val stderr = io.stderrBuf.toString(options.charset)
-                    if (code != 0) {
-                        cont.resumeWith(
-                            Result.failure(CliExit(code, stderr.trim(), stdout.trimEnd()))
-                        )
-                    } else {
-                        cont.resumeWith(Result.success(decodeReturn(spec, stdout)))
-                    }
+                    val result = Exec.exec(buildExecSpec(recipe))
+                    cont.resumeWith(Result.success(decodeReturn(spec, decodeCaptured(result.stdout))))
+                } catch (e: ExecException) {
+                    cont.resumeWith(Result.failure(throwableFromExec(e.error)))
                 } catch (t: Throwable) {
                     cont.resumeWith(Result.failure(t))
                 }
             }
-
             COROUTINE_SUSPENDED
         }
     } as T
-}
-
-// Kill process and its descendants (JDK 9+). Prevents orphaned children like `sleep` under a shell.
-fun killProcessTree(proc: Process) {
-    try {
-        val h = proc.toHandle()
-        h.descendants().forEach { ph ->
-            try {
-                ph.destroyForcibly()
-            } catch (_: Throwable) {}
-        }
-        h.destroyForcibly()
-    } catch (_: Throwable) {
-        try {
-            proc.destroyForcibly()
-        } catch (_: Throwable) {}
-    }
 }
